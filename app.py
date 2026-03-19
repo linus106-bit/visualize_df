@@ -18,7 +18,7 @@ else:
     DATA_DIR = os.getcwd()
     print(f"[WARNING] DATA_DIR not specified. Using current directory: {DATA_DIR}", file=sys.stderr)
 
-DURATION = 30  # seconds
+DEFAULT_DURATION = 30  # seconds
 
 
 def scan_parquet_files():
@@ -27,7 +27,7 @@ def scan_parquet_files():
     return files
 
 
-def load_ppg_data(filepath):
+def load_ppg_data(filepath, duration):
     df = pd.read_parquet(filepath)
 
     green = df["data"].iloc[0][1]
@@ -36,7 +36,7 @@ def load_ppg_data(filepath):
     actual_duration = (timestamps[-1] - timestamps[0]) / 1000.0
     actual_fs = len(green) / actual_duration
 
-    n_samples = int(DURATION * actual_fs)
+    n_samples = int(duration * actual_fs)
     green_slice = green[:n_samples]
 
     # Build time axis in seconds
@@ -46,7 +46,7 @@ def load_ppg_data(filepath):
         "signal": green_slice.tolist() if hasattr(green_slice, "tolist") else list(green_slice),
         "time": time_axis,
         "fs": round(actual_fs, 2),
-        "duration": DURATION,
+        "duration": duration,
         "n_samples": len(green_slice),
     }
 
@@ -62,6 +62,14 @@ def api_files():
     return jsonify({"total": len(files), "data_dir": DATA_DIR})
 
 
+def parse_duration(args):
+    try:
+        d = float(args.get("duration", DEFAULT_DURATION))
+        return max(1, d)
+    except (ValueError, TypeError):
+        return DEFAULT_DURATION
+
+
 @app.route("/api/data")
 def api_data():
     files = scan_parquet_files()
@@ -75,9 +83,10 @@ def api_data():
 
     index = max(0, min(index, len(files) - 1))
     filepath = files[index]
+    duration = parse_duration(request.args)
 
     try:
-        data = load_ppg_data(filepath)
+        data = load_ppg_data(filepath, duration)
     except Exception as e:
         return jsonify({"error": str(e), "filepath": filepath}), 500
 
@@ -97,9 +106,10 @@ def api_random():
 
     index = random.randint(0, len(files) - 1)
     filepath = files[index]
+    duration = parse_duration(request.args)
 
     try:
-        data = load_ppg_data(filepath)
+        data = load_ppg_data(filepath, duration)
     except Exception as e:
         return jsonify({"error": str(e), "filepath": filepath}), 500
 

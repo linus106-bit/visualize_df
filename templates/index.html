@@ -90,7 +90,15 @@
       text-align: center;
     }
 
-    #dot-mode-label {
+    #controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .ctrl-label {
       display: flex;
       align-items: center;
       gap: 6px;
@@ -99,12 +107,45 @@
       cursor: pointer;
       user-select: none;
     }
-    #dot-mode-label input[type="checkbox"] {
+    .ctrl-label input[type="checkbox"] {
       width: 15px;
       height: 15px;
       accent-color: #4ade80;
       cursor: pointer;
     }
+
+    #duration-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+    #duration-wrap input[type="number"] {
+      width: 70px;
+      background: #1a1d27;
+      border: 1px solid #3a3f55;
+      border-radius: 5px;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      padding: 3px 7px;
+      text-align: center;
+    }
+    #duration-wrap input[type="number"]:focus {
+      outline: none;
+      border-color: #a0c4ff;
+    }
+    #btn-apply-duration {
+      padding: 3px 10px;
+      background: #2c3e6b;
+      color: #a0c4ff;
+      border: none;
+      border-radius: 5px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #btn-apply-duration:hover { background: #3a5090; }
   </style>
 </head>
 <body>
@@ -124,11 +165,17 @@
 
   <div id="status"></div>
 
-  <div style="display:flex; justify-content:center;">
-    <label id="dot-mode-label">
+  <div id="controls">
+    <label class="ctrl-label">
       <input type="checkbox" id="chk-dot-mode" />
       점 모드 (선 없이 점만 표시)
     </label>
+    <div id="duration-wrap">
+      <span>Duration:</span>
+      <input type="number" id="input-duration" value="30" min="1" max="3600" step="1" />
+      <span>s</span>
+      <button id="btn-apply-duration">Apply</button>
+    </div>
   </div>
 
   <footer>
@@ -143,9 +190,11 @@
     let currentIndex = 0;
     let totalFiles = 0;
     let chart = null;
+    let currentDuration = 30;
 
     const ctx = document.getElementById('ppgChart').getContext('2d');
     const chkDotMode = document.getElementById('chk-dot-mode');
+    const inputDuration = document.getElementById('input-duration');
 
     function isDotMode() { return chkDotMode.checked; }
 
@@ -155,10 +204,12 @@
         label: 'PPG (Green)',
         data,
         borderColor: '#4ade80',
-        backgroundColor: dot ? '#4ade80' : 'rgba(74,222,128,0.07)',
+        backgroundColor: 'rgba(74,222,128,0.07)',
         borderWidth: dot ? 0 : 1,
-        pointRadius: dot ? 2 : 0,
+        pointRadius: dot ? 3 : 0,
+        pointHoverRadius: dot ? 4 : 4,
         pointBackgroundColor: '#4ade80',
+        pointBorderWidth: 0,
         showLine: !dot,
         tension: 0,
         fill: !dot,
@@ -221,7 +272,7 @@
       setLoading(true);
       setStatus('Loading…');
       try {
-        const res = await fetch(`/api/data?index=${index}`);
+        const res = await fetch(`/api/data?index=${index}&duration=${currentDuration}`);
         const json = await res.json();
         if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
         renderData(json);
@@ -236,7 +287,7 @@
       setLoading(true);
       setStatus('Loading random…');
       try {
-        const res = await fetch('/api/random');
+        const res = await fetch(`/api/random?duration=${currentDuration}`);
         const json = await res.json();
         if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
         renderData(json);
@@ -273,11 +324,22 @@
       const ds = chart.data.datasets[0];
       const dot = isDotMode();
       ds.borderWidth = dot ? 0 : 1;
-      ds.pointRadius = dot ? 2 : 0;
+      ds.pointRadius = dot ? 3 : 0;
+      ds.pointHoverRadius = 4;
       ds.showLine = !dot;
       ds.fill = !dot;
-      ds.backgroundColor = dot ? '#4ade80' : 'rgba(74,222,128,0.07)';
       chart.update('none');
+    });
+
+    document.getElementById('btn-apply-duration').addEventListener('click', () => {
+      const val = parseFloat(inputDuration.value);
+      if (!isNaN(val) && val >= 1) {
+        currentDuration = val;
+        loadData(currentIndex);
+      }
+    });
+    inputDuration.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('btn-apply-duration').click();
     });
 
     document.getElementById('btn-prev').addEventListener('click', () => {
