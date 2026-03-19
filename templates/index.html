@@ -242,6 +242,7 @@
             }
           },
           plugins: {
+            decimation: { enabled: false },
             legend: { labels: { color: '#ccc' } },
             tooltip: {
               mode: 'index',
@@ -328,7 +329,7 @@
       ds.pointHoverRadius = 4;
       ds.showLine = !dot;
       ds.fill = !dot;
-      chart.update('none');
+      chart.update();
     });
 
     document.getElementById('btn-apply-duration').addEventListener('click', () => {
