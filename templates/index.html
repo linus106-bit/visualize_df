@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PPG Visualizer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 16px;
+      gap: 12px;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    h1 { font-size: 1.2rem; color: #a0c4ff; letter-spacing: 0.05em; }
+
+    #meta {
+      font-size: 0.82rem;
+      color: #888;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    #meta span { display: flex; align-items: center; gap: 4px; }
+    #meta strong { color: #ccc; }
+
+    #chart-container {
+      flex: 1;
+      position: relative;
+      background: #1a1d27;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 0;
+    }
+
+    #ppgChart { width: 100% !important; height: 100% !important; }
+
+    footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    button {
+      padding: 8px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      font-weight: 600;
+    }
+    button:active { transform: scale(0.96); }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #btn-prev { background: #2c3e6b; color: #a0c4ff; }
+    #btn-prev:hover:not(:disabled) { background: #3a5090; }
+
+    #btn-random { background: #2b4a2b; color: #80e080; }
+    #btn-random:hover:not(:disabled) { background: #386038; }
+
+    #btn-next { background: #2c3e6b; color: #a0c4ff; }
+    #btn-next:hover:not(:disabled) { background: #3a5090; }
+
+    #status {
+      font-size: 0.8rem;
+      color: #f08080;
+      min-height: 1.2em;
+      text-align: center;
+    }
+
+    .counter {
+      font-size: 0.9rem;
+      color: #777;
+      min-width: 80px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PPG Visualizer</h1>
+    <div id="meta">
+      <span>파일: <strong id="info-filename">—</strong></span>
+      <span>fs: <strong id="info-fs">—</strong> Hz</span>
+      <span>샘플 수: <strong id="info-samples">—</strong></span>
+      <span>표시 구간: <strong id="info-duration">—</strong> s</span>
+    </div>
+  </header>
+
+  <div id="chart-container">
+    <canvas id="ppgChart"></canvas>
+  </div>
+
+  <div id="status"></div>
+
+  <footer>
+    <button id="btn-prev" disabled>◀ Prev</button>
+    <span class="counter" id="counter">— / —</span>
+    <button id="btn-random">⟳ Random</button>
+    <span class="counter"></span>
+    <button id="btn-next" disabled>Next ▶</button>
+  </footer>
+
+  <script>
+    let currentIndex = 0;
+    let totalFiles = 0;
+    let chart = null;
+
+    const ctx = document.getElementById('ppgChart').getContext('2d');
+
+    function initChart(labels, data) {
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'PPG (Green)',
+            data,
+            borderColor: '#4ade80',
+            backgroundColor: 'rgba(74,222,128,0.07)',
+            borderWidth: 1,
+            pointRadius: 0,
+            tension: 0,
+            fill: true,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'Time (s)', color: '#888' },
+              ticks: { color: '#666', maxTicksLimit: 15 },
+              grid: { color: '#222' },
+            },
+            y: {
+              title: { display: true, text: 'Amplitude', color: '#888' },
+              ticks: { color: '#666' },
+              grid: { color: '#222' },
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#ccc' } },
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+              callbacks: {
+                title: items => `t = ${parseFloat(items[0].label).toFixed(3)} s`,
+              }
+            }
+          },
+          interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        }
+      });
+    }
+
+    function setStatus(msg, isError = false) {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.style.color = isError ? '#f08080' : '#80e080';
+    }
+
+    function setLoading(isLoading) {
+      document.getElementById('btn-prev').disabled = isLoading || currentIndex <= 0;
+      document.getElementById('btn-next').disabled = isLoading || currentIndex >= totalFiles - 1;
+      document.getElementById('btn-random').disabled = isLoading;
+    }
+
+    async function loadData(index) {
+      setLoading(true);
+      setStatus('Loading…');
+      try {
+        const res = await fetch(`/api/data?index=${index}`);
+        const json = await res.json();
+        if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
+        renderData(json);
+      } catch (e) {
+        setStatus(`Network error: ${e.message}`, true);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function loadRandom() {
+      setLoading(true);
+      setStatus('Loading random…');
+      try {
+        const res = await fetch('/api/random');
+        const json = await res.json();
+        if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
+        renderData(json);
+      } catch (e) {
+        setStatus(`Network error: ${e.message}`, true);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function renderData(json) {
+      currentIndex = json.index;
+      totalFiles = json.total;
+
+      // Update meta
+      document.getElementById('info-filename').textContent = json.filename;
+      document.getElementById('info-fs').textContent = json.fs;
+      document.getElementById('info-samples').textContent = json.n_samples.toLocaleString();
+      document.getElementById('info-duration').textContent = json.duration;
+      document.getElementById('counter').textContent = `${currentIndex + 1} / ${totalFiles}`;
+
+      setStatus('');
+
+      // Build x labels from time array (already in seconds)
+      initChart(json.time, json.signal);
+
+      // Update button states
+      document.getElementById('btn-prev').disabled = currentIndex <= 0;
+      document.getElementById('btn-next').disabled = currentIndex >= totalFiles - 1;
+    }
+
+    document.getElementById('btn-prev').addEventListener('click', () => {
+      if (currentIndex > 0) loadData(currentIndex - 1);
+    });
+    document.getElementById('btn-next').addEventListener('click', () => {
+      if (currentIndex < totalFiles - 1) loadData(currentIndex + 1);
+    });
+    document.getElementById('btn-random').addEventListener('click', loadRandom);
+
+    // Initial load
+    loadRandom();
+  </script>
+</body>
+</html>
