@@ -114,14 +114,14 @@
       cursor: pointer;
     }
 
-    #duration-wrap {
+    .time-wrap {
       display: flex;
       align-items: center;
       gap: 6px;
       font-size: 0.85rem;
       color: #aaa;
     }
-    #duration-wrap input[type="number"] {
+    .time-wrap input[type="number"] {
       width: 70px;
       background: #1a1d27;
       border: 1px solid #3a3f55;
@@ -131,7 +131,7 @@
       padding: 3px 7px;
       text-align: center;
     }
-    #duration-wrap input[type="number"]:focus {
+    .time-wrap input[type="number"]:focus {
       outline: none;
       border-color: #a0c4ff;
     }
@@ -155,7 +155,8 @@
       <span>파일: <strong id="info-filename">—</strong></span>
       <span>fs: <strong id="info-fs">—</strong> Hz</span>
       <span>샘플 수: <strong id="info-samples">—</strong></span>
-      <span>표시 구간: <strong id="info-duration">—</strong> s</span>
+      <span>표시 구간: <strong id="info-start">—</strong> ~ <strong id="info-end">—</strong> s</span>
+      <span>전체 길이: <strong id="info-total-duration">—</strong> s</span>
     </div>
   </header>
 
@@ -170,7 +171,12 @@
       <input type="checkbox" id="chk-dot-mode" checked />
       점 모드 (선 없이 점만 표시)
     </label>
-    <div id="duration-wrap">
+    <div class="time-wrap">
+      <span>Start:</span>
+      <input type="number" id="input-start" value="0" min="0" step="1" />
+      <span>s</span>
+    </div>
+    <div class="time-wrap">
       <span>Duration:</span>
       <input type="number" id="input-duration" value="30" min="1" max="3600" step="1" />
       <span>s</span>
@@ -191,10 +197,12 @@
     let totalFiles = 0;
     let chart = null;
     let currentDuration = 30;
+    let currentStart = 0;
 
     const ctx = document.getElementById('ppgChart').getContext('2d');
     const chkDotMode = document.getElementById('chk-dot-mode');
     const inputDuration = document.getElementById('input-duration');
+    const inputStart = document.getElementById('input-start');
 
     function isDotMode() { return chkDotMode.checked; }
 
@@ -273,7 +281,7 @@
       setLoading(true);
       setStatus('Loading…');
       try {
-        const res = await fetch(`/api/data?index=${index}&duration=${currentDuration}`);
+        const res = await fetch(`/api/data?index=${index}&duration=${currentDuration}&start=${currentStart}`);
         const json = await res.json();
         if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
         renderData(json);
@@ -288,7 +296,7 @@
       setLoading(true);
       setStatus('Loading random…');
       try {
-        const res = await fetch(`/api/random?duration=${currentDuration}`);
+        const res = await fetch(`/api/random?duration=${currentDuration}&start=${currentStart}`);
         const json = await res.json();
         if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
         renderData(json);
@@ -307,8 +315,12 @@
       document.getElementById('info-filename').textContent = json.filename;
       document.getElementById('info-fs').textContent = json.fs;
       document.getElementById('info-samples').textContent = json.n_samples.toLocaleString();
-      document.getElementById('info-duration').textContent = json.duration;
+      document.getElementById('info-start').textContent = json.start.toFixed(1);
+      document.getElementById('info-end').textContent = (json.start + json.duration).toFixed(1);
+      document.getElementById('info-total-duration').textContent = json.total_duration;
       document.getElementById('counter').textContent = `${currentIndex + 1} / ${totalFiles}`;
+      // Sync inputs to reflect actual start (may have been clamped)
+      inputStart.value = json.start;
 
       setStatus('');
 
@@ -333,13 +345,16 @@
     });
 
     document.getElementById('btn-apply-duration').addEventListener('click', () => {
-      const val = parseFloat(inputDuration.value);
-      if (!isNaN(val) && val >= 1) {
-        currentDuration = val;
-        loadData(currentIndex);
-      }
+      const durVal = parseFloat(inputDuration.value);
+      const startVal = parseFloat(inputStart.value);
+      if (!isNaN(durVal) && durVal >= 1) currentDuration = durVal;
+      if (!isNaN(startVal) && startVal >= 0) currentStart = startVal;
+      loadData(currentIndex);
     });
     inputDuration.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('btn-apply-duration').click();
+    });
+    inputStart.addEventListener('keydown', e => {
       if (e.key === 'Enter') document.getElementById('btn-apply-duration').click();
     });
 
