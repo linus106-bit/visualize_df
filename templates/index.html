@@ -172,11 +172,6 @@
       점 모드 (선 없이 점만 표시)
     </label>
     <div class="time-wrap">
-      <span>Start:</span>
-      <input type="number" id="input-start" value="0" min="0" step="1" />
-      <span>s</span>
-    </div>
-    <div class="time-wrap">
       <span>Duration:</span>
       <input type="number" id="input-duration" value="30" min="1" max="3600" step="1" />
       <span>s</span>
@@ -197,12 +192,10 @@
     let totalFiles = 0;
     let chart = null;
     let currentDuration = 30;
-    let currentStart = 0;
 
     const ctx = document.getElementById('ppgChart').getContext('2d');
     const chkDotMode = document.getElementById('chk-dot-mode');
     const inputDuration = document.getElementById('input-duration');
-    const inputStart = document.getElementById('input-start');
 
     function isDotMode() { return chkDotMode.checked; }
 
@@ -281,7 +274,7 @@
       setLoading(true);
       setStatus('Loading…');
       try {
-        const res = await fetch(`/api/data?index=${index}&duration=${currentDuration}&start=${currentStart}`);
+        const res = await fetch(`/api/data?index=${index}&duration=${currentDuration}`);
         const json = await res.json();
         if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
         renderData(json);
@@ -296,7 +289,7 @@
       setLoading(true);
       setStatus('Loading random…');
       try {
-        const res = await fetch(`/api/random?duration=${currentDuration}&start=${currentStart}`);
+        const res = await fetch(`/api/random?duration=${currentDuration}`);
         const json = await res.json();
         if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
         renderData(json);
@@ -319,8 +312,6 @@
       document.getElementById('info-end').textContent = (json.start + json.duration).toFixed(1);
       document.getElementById('info-total-duration').textContent = json.total_duration;
       document.getElementById('counter').textContent = `${currentIndex + 1} / ${totalFiles}`;
-      // Sync inputs to reflect actual start (may have been clamped)
-      inputStart.value = json.start;
 
       setStatus('');
 
@@ -345,16 +336,13 @@
     });
 
     document.getElementById('btn-apply-duration').addEventListener('click', () => {
-      const durVal = parseFloat(inputDuration.value);
-      const startVal = parseFloat(inputStart.value);
-      if (!isNaN(durVal) && durVal >= 1) currentDuration = durVal;
-      if (!isNaN(startVal) && startVal >= 0) currentStart = startVal;
-      loadData(currentIndex);
+      const val = parseFloat(inputDuration.value);
+      if (!isNaN(val) && val >= 1) {
+        currentDuration = val;
+        loadData(currentIndex);
+      }
     });
     inputDuration.addEventListener('keydown', e => {
-      if (e.key === 'Enter') document.getElementById('btn-apply-duration').click();
-    });
-    inputStart.addEventListener('keydown', e => {
       if (e.key === 'Enter') document.getElementById('btn-apply-duration').click();
     });
 
