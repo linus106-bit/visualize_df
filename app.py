@@ -23,23 +23,44 @@ def scan_parquet_files():
     return files
 
 
-def load_ppg_data(filepath):
+CHANNEL_INDEX = {
+    "green": 1,
+    "acc_x": -3,
+    "acc_y": -2,
+    "acc_z": -1,
+}
+
+CHANNEL_LABEL = {
+    "green": "PPG (Green)",
+    "acc_x": "Acc X",
+    "acc_y": "Acc Y",
+    "acc_z": "Acc Z",
+}
+
+
+def load_ppg_data(filepath, channel="green"):
+    if channel not in CHANNEL_INDEX:
+        channel = "green"
+
     df = pd.read_parquet(filepath)
 
-    green = df["data"].iloc[0][1]
+    idx = CHANNEL_INDEX[channel]
+    signal_raw = df["data"].iloc[0][idx]
     timestamps = df["UTCTimestamp_ms"].iloc[0]
 
     actual_duration = (timestamps[-1] - timestamps[0]) / 1000.0
-    actual_fs = len(green) / actual_duration
-    total_samples = len(green)
+    actual_fs = len(signal_raw) / actual_duration
+    total_samples = len(signal_raw)
 
-    signal = green.tolist() if hasattr(green, "tolist") else list(green)
+    signal = signal_raw.tolist() if hasattr(signal_raw, "tolist") else list(signal_raw)
 
     return {
         "signal": signal,
         "fs": round(actual_fs, 2),
         "total_duration": round(actual_duration, 3),
         "n_samples": total_samples,
+        "channel": channel,
+        "channel_label": CHANNEL_LABEL[channel],
     }
 
 
@@ -65,11 +86,12 @@ def api_data():
     except ValueError:
         index = 0
 
+    channel = request.args.get("channel", "green")
     index = max(0, min(index, len(files) - 1))
     filepath = files[index]
 
     try:
-        data = load_ppg_data(filepath)
+        data = load_ppg_data(filepath, channel)
     except Exception as e:
         return jsonify({"error": str(e), "filepath": filepath}), 500
 
@@ -88,10 +110,11 @@ def api_random():
         return jsonify({"error": f"No parquet files found in {DATA_DIR}"}), 404
 
     index = random.randint(0, len(files) - 1)
+    channel = request.args.get("channel", "green")
     filepath = files[index]
 
     try:
-        data = load_ppg_data(filepath)
+        data = load_ppg_data(filepath, channel)
     except Exception as e:
         return jsonify({"error": str(e), "filepath": filepath}), 500
 
