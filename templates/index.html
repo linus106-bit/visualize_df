@@ -133,6 +133,36 @@
       accent-color: #4ade80;
       cursor: pointer;
     }
+
+    .channel-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .channel-selector span {
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+    .ch-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      user-select: none;
+      padding: 4px 10px;
+      border-radius: 5px;
+      border: 1px solid #333;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .ch-label:hover { background: #222; }
+    .ch-label input[type="radio"] { display: none; }
+    .ch-label.active { border-color: #4ade80; color: #4ade80; background: #1a2e1a; }
+    #ch-green.active  { border-color: #4ade80; color: #4ade80; background: #1a2e1a; }
+    #ch-acc_x.active  { border-color: #f97316; color: #f97316; background: #2e1e10; }
+    #ch-acc_y.active  { border-color: #60a5fa; color: #60a5fa; background: #10182e; }
+    #ch-acc_z.active  { border-color: #e879f9; color: #e879f9; background: #2a102e; }
   </style>
 </head>
 <body>
@@ -154,6 +184,21 @@
   <div id="status"></div>
 
   <div id="controls">
+    <div class="channel-selector">
+      <span>채널:</span>
+      <label class="ch-label active" id="ch-green">
+        <input type="radio" name="channel" value="green" checked /> PPG Green
+      </label>
+      <label class="ch-label" id="ch-acc_x">
+        <input type="radio" name="channel" value="acc_x" /> Acc X
+      </label>
+      <label class="ch-label" id="ch-acc_y">
+        <input type="radio" name="channel" value="acc_y" /> Acc Y
+      </label>
+      <label class="ch-label" id="ch-acc_z">
+        <input type="radio" name="channel" value="acc_z" /> Acc Z
+      </label>
+    </div>
     <label class="ctrl-label">
       <input type="checkbox" id="chk-dot-mode" checked />
       점 모드 (선 없이 점만 표시)
@@ -173,23 +218,43 @@
     let currentIndex = 0;
     let totalFiles = 0;
     let chart = null;
+    let currentChannel = 'green';
+
+    const CHANNEL_COLOR = {
+      green: { border: '#4ade80', bg: 'rgba(74,222,128,0.07)', point: '#4ade80' },
+      acc_x: { border: '#f97316', bg: 'rgba(249,115,22,0.07)', point: '#f97316' },
+      acc_y: { border: '#60a5fa', bg: 'rgba(96,165,250,0.07)', point: '#60a5fa' },
+      acc_z: { border: '#e879f9', bg: 'rgba(232,121,249,0.07)', point: '#e879f9' },
+    };
 
     const ctx = document.getElementById('ppgChart').getContext('2d');
     const chkDotMode = document.getElementById('chk-dot-mode');
 
     function isDotMode() { return chkDotMode.checked; }
 
-    function buildDataset(xyData) {
+    function getSelectedChannel() {
+      const radio = document.querySelector('input[name="channel"]:checked');
+      return radio ? radio.value : 'green';
+    }
+
+    function updateChannelLabels(channel) {
+      document.querySelectorAll('.ch-label').forEach(el => el.classList.remove('active'));
+      const target = document.getElementById('ch-' + channel);
+      if (target) target.classList.add('active');
+    }
+
+    function buildDataset(xyData, label) {
       const dot = isDotMode();
+      const ch = CHANNEL_COLOR[currentChannel] || CHANNEL_COLOR.green;
       return {
-        label: 'PPG (Green)',
+        label: label || 'Signal',
         data: xyData,
-        borderColor: '#4ade80',
-        backgroundColor: 'rgba(74,222,128,0.07)',
+        borderColor: ch.border,
+        backgroundColor: ch.bg,
         borderWidth: dot ? 0 : 1,
         pointRadius: dot ? 2 : 0,
         pointHoverRadius: 4,
-        pointBackgroundColor: '#4ade80',
+        pointBackgroundColor: ch.point,
         pointBorderWidth: 0,
         showLine: !dot,
         tension: 0,
@@ -197,11 +262,11 @@
       };
     }
 
-    function initChart(xyData, totalDuration) {
+    function initChart(xyData, totalDuration, label) {
       if (chart) chart.destroy();
       chart = new Chart(ctx, {
         type: 'line',
-        data: { datasets: [buildDataset(xyData)] },
+        data: { datasets: [buildDataset(xyData, label)] },
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -269,11 +334,12 @@
       document.getElementById('btn-random').disabled = isLoading;
     }
 
-    async function loadData(index) {
+    async function loadData(index, channel) {
+      channel = channel || getSelectedChannel();
       setLoading(true);
       setStatus('Loading…');
       try {
-        const res = await fetch(`/api/data?index=${index}`);
+        const res = await fetch(`/api/data?index=${index}&channel=${channel}`);
         const json = await res.json();
         if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
         renderData(json);
@@ -285,10 +351,11 @@
     }
 
     async function loadRandom() {
+      const channel = getSelectedChannel();
       setLoading(true);
       setStatus('Loading random…');
       try {
-        const res = await fetch(`/api/random`);
+        const res = await fetch(`/api/random?channel=${channel}`);
         const json = await res.json();
         if (!res.ok) { setStatus(json.error || 'Unknown error', true); return; }
         renderData(json);
@@ -302,6 +369,9 @@
     function renderData(json) {
       currentIndex = json.index;
       totalFiles = json.total;
+      currentChannel = json.channel || 'green';
+
+      updateChannelLabels(currentChannel);
 
       document.getElementById('info-filename').textContent = json.filename;
       document.getElementById('info-fs').textContent = json.fs;
@@ -315,7 +385,7 @@
       const fs = json.fs;
       const xyData = json.signal.map((y, i) => ({ x: i / fs, y }));
 
-      initChart(xyData, json.total_duration);
+      initChart(xyData, json.total_duration, json.channel_label);
 
       document.getElementById('btn-prev').disabled = currentIndex <= 0;
       document.getElementById('btn-next').disabled = currentIndex >= totalFiles - 1;
@@ -331,6 +401,12 @@
       ds.showLine = !dot;
       ds.fill = !dot;
       chart.update();
+    });
+
+    document.querySelectorAll('input[name="channel"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        loadData(currentIndex, radio.value);
+      });
     });
 
     document.getElementById('btn-reset-zoom').addEventListener('click', () => {
