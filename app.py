@@ -2,8 +2,6 @@ import os
 import sys
 import random
 import glob
-import json
-import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, render_template, request
 
@@ -18,9 +16,6 @@ else:
     DATA_DIR = os.getcwd()
     print(f"[WARNING] DATA_DIR not specified. Using current directory: {DATA_DIR}", file=sys.stderr)
 
-DEFAULT_DURATION = 30  # seconds
-DEFAULT_START = 0  # seconds
-
 
 def scan_parquet_files():
     pattern = os.path.join(DATA_DIR, "**", "*.parquet")
@@ -28,7 +23,7 @@ def scan_parquet_files():
     return files
 
 
-def load_ppg_data(filepath, duration, start=0):
+def load_ppg_data(filepath):
     df = pd.read_parquet(filepath)
 
     green = df["data"].iloc[0][1]
@@ -38,29 +33,13 @@ def load_ppg_data(filepath, duration, start=0):
     actual_fs = len(green) / actual_duration
     total_samples = len(green)
 
-    n_samples = int(duration * actual_fs)
-    start_sample = int(start * actual_fs)
-    end_sample = start_sample + n_samples
-
-    # If the window exceeds the data, clamp to the end
-    if end_sample > total_samples:
-        end_sample = total_samples
-        start_sample = max(0, total_samples - n_samples)
-
-    green_slice = green[start_sample:end_sample]
-
-    # Build time axis in seconds (absolute position in signal)
-    time_axis = [(start_sample + i) / actual_fs for i in range(len(green_slice))]
-    actual_start = start_sample / actual_fs
+    signal = green.tolist() if hasattr(green, "tolist") else list(green)
 
     return {
-        "signal": green_slice.tolist() if hasattr(green_slice, "tolist") else list(green_slice),
-        "time": time_axis,
+        "signal": signal,
         "fs": round(actual_fs, 2),
-        "duration": duration,
-        "start": round(actual_start, 3),
         "total_duration": round(actual_duration, 3),
-        "n_samples": len(green_slice),
+        "n_samples": total_samples,
     }
 
 
@@ -73,22 +52,6 @@ def index():
 def api_files():
     files = scan_parquet_files()
     return jsonify({"total": len(files), "data_dir": DATA_DIR})
-
-
-def parse_duration(args):
-    try:
-        d = float(args.get("duration", DEFAULT_DURATION))
-        return max(1, d)
-    except (ValueError, TypeError):
-        return DEFAULT_DURATION
-
-
-def parse_start(args):
-    try:
-        s = float(args.get("start", DEFAULT_START))
-        return max(0, s)
-    except (ValueError, TypeError):
-        return DEFAULT_START
 
 
 @app.route("/api/data")
@@ -104,11 +67,9 @@ def api_data():
 
     index = max(0, min(index, len(files) - 1))
     filepath = files[index]
-    duration = parse_duration(request.args)
-    start = parse_start(request.args)
 
     try:
-        data = load_ppg_data(filepath, duration, start)
+        data = load_ppg_data(filepath)
     except Exception as e:
         return jsonify({"error": str(e), "filepath": filepath}), 500
 
@@ -128,11 +89,9 @@ def api_random():
 
     index = random.randint(0, len(files) - 1)
     filepath = files[index]
-    duration = parse_duration(request.args)
-    start = parse_start(request.args)
 
     try:
-        data = load_ppg_data(filepath, duration, start)
+        data = load_ppg_data(filepath)
     except Exception as e:
         return jsonify({"error": str(e), "filepath": filepath}), 500
 
